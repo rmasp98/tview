@@ -74,6 +74,11 @@ type InputField struct {
 	// selection.
 	autocomplete func(text string) []string
 
+	// An optional function to define how autocomplete inserts the selected value
+	// Recieves autocomplete text, current text, cursor position and the key press
+	// that triggered the function call. It will return the new field text
+	autocompleteInsert func(autoCompleteText string, currentText string, cursorPos int, key tcell.Key) string
+
 	// The List object which shows the selectable autocomplete entries. If not
 	// nil, the list's main texts represent the current autocomplete entries.
 	autocompleteList      *List
@@ -210,6 +215,14 @@ func (i *InputField) SetMaskCharacter(mask rune) *InputField {
 func (i *InputField) SetAutocompleteFunc(callback func(currentText string) (entries []string)) *InputField {
 	i.autocomplete = callback
 	i.Autocomplete()
+	return i
+}
+
+// SetAutocompleteInsertFunc sets the callback triggered when autocomplete options
+// have been selected. This allows fine-grained definition of how the autocomplete
+// selection is inserted into the InputField
+func (i *InputField) SetAutocompleteInsertFunc(callback func(autoCompleteText string, currentText string, cursorPos int, key tcell.Key) string) *InputField {
+	i.autocompleteInsert = callback
 	return i
 }
 
@@ -484,7 +497,7 @@ func (i *InputField) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 		}
 
 		// Change the autocomplete selection.
-		autocompleteSelect := func(offset int) {
+		autocompleteSelect := func(offset int, key tcell.Key) {
 			count := i.autocompleteList.GetItemCount()
 			newEntry := i.autocompleteList.GetCurrentItem() + offset
 			if newEntry >= count {
@@ -493,8 +506,12 @@ func (i *InputField) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 				newEntry = count - 1
 			}
 			i.autocompleteList.SetCurrentItem(newEntry)
+
 			currentText, _ = i.autocompleteList.GetItemText(newEntry) // Don't trigger changed function twice.
 			currentText = stripTags(currentText)
+			if i.autocompleteInsert != nil {
+				currentText = i.autocompleteInsert(currentText, i.text, i.cursorPos, key)
+			}
 			i.SetText(currentText)
 		}
 
@@ -581,7 +598,7 @@ func (i *InputField) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 			end()
 		case tcell.KeyEnter:
 			if i.autocompleteList != nil {
-				autocompleteSelect(0)
+				autocompleteSelect(0, key)
 				i.autocompleteList = nil
 			} else {
 				finish(key)
@@ -594,19 +611,19 @@ func (i *InputField) InputHandler() func(event *tcell.EventKey, setFocus func(p 
 			}
 		case tcell.KeyTab:
 			if i.autocompleteList != nil {
-				autocompleteSelect(0)
+				autocompleteSelect(0, key)
 			} else {
 				finish(key)
 			}
 		case tcell.KeyDown:
 			if i.autocompleteList != nil {
-				autocompleteSelect(1)
+				autocompleteSelect(1, key)
 			} else {
 				finish(key)
 			}
 		case tcell.KeyUp, tcell.KeyBacktab: // Autocomplete selection.
 			if i.autocompleteList != nil {
-				autocompleteSelect(-1)
+				autocompleteSelect(-1, key)
 			} else {
 				finish(key)
 			}
